@@ -27,7 +27,7 @@ async function getAccessToken() {
     );
   }
 
-  const body = new URLSearchParams({
+  const body = JSON.stringify({
     client_id: CLIENT_ID,
     client_secret: CLIENT_SECRET,
     grant_type: "authorization_code",
@@ -37,8 +37,8 @@ async function getAccessToken() {
 
   const res = await fetch("https://auth.bouncie.com/oauth/token", {
     method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: body.toString(),
+    headers: { "Content-Type": "application/json" },
+    body: body,
   });
 
   if (!res.ok) {
