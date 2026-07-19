@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hummus Fit — Fleet Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Montserrat:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+  :root{
+    --ink:#F2EFE9;
+    --void:#0B0B0A;
+    --paper:#1B1A17;
+    --teal:#2BBFAA;
+    --orange:#E8612C;
+    --steel:#3A3A38;
+    --steel-light:#57554F;
+    --dim:#9A968C;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{background:var(--void); color:var(--ink); font-family:'Montserrat',sans-serif; height:100%;}
+  body{
+    background-image: radial-gradient(circle at 1px 1px, rgba(255,255,255,0.035) 1px, transparent 0);
+    background-size: 22px 22px;
+  }
+
+  header{
+    padding: 28px 6vw 20px;
+    border-bottom: 1px solid var(--steel);
+  }
+  .eyebrow{
+    font-family:'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+    color: var(--teal);
+    display:flex;
+    align-items:center;
+    gap:10px;
+    margin-bottom: 10px;
+  }
+  .eyebrow::before{
+    content:"";
+    width:7px; height:7px;
+    background: var(--teal);
+    border-radius:50%;
+    box-shadow: 0 0 8px var(--teal);
+    animation: pulse 2.2s ease-in-out infinite;
+  }
+  @keyframes pulse{ 0%,100%{ opacity:1; } 50%{ opacity:0.35; } }
+  h1{
+    font-family:'Bebas Neue', sans-serif;
+    font-size: clamp(36px, 6vw, 64px);
+    line-height: 0.9;
+    letter-spacing: 0.01em;
+  }
+  h1 span{ color: var(--orange); }
+
+  main{
+    display:grid;
+    grid-template-columns: 340px 1fr;
+    height: calc(100vh - 110px);
+  }
+  @media (max-width: 800px){
+    main{ grid-template-columns: 1fr; grid-template-rows: auto 50vh; height:auto; }
+  }
+
+  .vehicle-list{
+    padding: 20px;
+    overflow-y:auto;
+    border-right: 1px solid var(--steel);
+  }
+  .vehicle-card{
+    background: var(--paper);
+    border: 1px solid var(--steel);
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin-bottom: 12px;
+    cursor:pointer;
+    transition: border-color .15s ease, transform .15s ease;
+  }
+  .vehicle-card:hover{ border-color: var(--teal); transform: translateY(-1px); }
+  .vehicle-card.selected{ border-color: var(--orange); }
+  .vehicle-top{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-bottom: 6px;
+  }
+  .vehicle-name{
+    font-family:'Bebas Neue', sans-serif;
+    font-size: 18px;
+    letter-spacing:0.02em;
+  }
+  .vehicle-status{
+    font-family:'JetBrains Mono', monospace;
+    font-size: 9.5px;
+    letter-spacing:0.08em;
+    text-transform:uppercase;
+    padding: 3px 8px;
+    border-radius: 999px;
+  }
+  .status-moving{ color: var(--teal); border:1px solid var(--teal); }
+  .status-idle{ color: var(--orange); border:1px solid var(--orange); }
+  .status-off{ color: var(--dim); border:1px solid var(--steel-light); }
+  .vehicle-detail{
+    font-size: 12px;
+    color: var(--dim);
+    line-height:1.6;
+  }
+  .vehicle-detail b{ color: var(--ink); font-weight:600; }
+
+  #map{
+    background: var(--paper);
+  }
+
+  .empty-state{
+    padding: 40px 24px;
+    text-align:center;
+    color: var(--dim);
+    font-family:'JetBrains Mono', monospace;
+    font-size: 13px;
+    line-height:1.8;
+  }
+  .empty-state a{ color: var(--teal); }
+
+  .refresh-note{
+    font-family:'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--steel-light);
+    padding: 10px 20px;
+    border-top: 1px solid var(--steel);
+  }
+
+  /* pulsing vehicle marker */
+  .veh-marker{
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    background: var(--teal);
+    border: 2px solid var(--void);
+    box-shadow: 0 0 0 rgba(43,191,170,0.6);
+    animation: markerPulse 2s infinite;
+  }
+  .veh-marker.idle{ background: var(--orange); animation: markerPulseOrange 2s infinite; }
+  @keyframes markerPulse{
+    0%{ box-shadow: 0 0 0 0 rgba(43,191,170,0.6); }
+    70%{ box-shadow: 0 0 0 12px rgba(43,191,170,0); }
+    100%{ box-shadow: 0 0 0 0 rgba(43,191,170,0); }
+  }
+  @keyframes markerPulseOrange{
+    0%{ box-shadow: 0 0 0 0 rgba(232,97,44,0.6); }
+    70%{ box-shadow: 0 0 0 12px rgba(232,97,44,0); }
+    100%{ box-shadow: 0 0 0 0 rgba(232,97,44,0); }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="eyebrow">Hummus Fit / Buffin Bakery</div>
+  <h1>FLEET <span>TRACKER</span></h1>
+</header>
+
+<main>
+  <div class="vehicle-list" id="vehicleList">
+    <div class="empty-state">Loading vehicles…</div>
+  </div>
+  <div id="map"></div>
+</main>
+<div class="refresh-note" id="refreshNote">Refreshing every 15 seconds</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+  var map = L.map('map', { zoomControl: true }).setView([40.83, -73.13], 10);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    attribution: '&copy; OpenStreetMap &copy; CARTO',
+    maxZoom: 19
+  }).addTo(map);
+
+  var markers = {};
+  var selectedImei = null;
+
+  function statusFromVehicle(v){
+    // Bouncie stats: moving speed > 0 = moving, ignition on/idle, else off
+    var speed = (v.stats && v.stats.speed) || 0;
+    var isRunning = v.stats && v.stats.isRunning;
+    if(speed > 1) return 'moving';
+    if(isRunning) return 'idle';
+    return 'off';
+  }
+
+  function statusLabel(s){
+    return s === 'moving' ? 'Moving' : s === 'idle' ? 'Idle' : 'Parked';
+  }
+
+  function renderVehicles(vehicles){
+    var list = document.getElementById('vehicleList');
+    if(!vehicles || vehicles.length === 0){
+      list.innerHTML = '<div class="empty-state">No vehicles returned yet.<br>Check that devices are authorized in your Bouncie developer account.</div>';
+      return;
+    }
+    list.innerHTML = '';
+    vehicles.forEach(function(v){
+      var status = statusFromVehicle(v);
+      var lat = v.stats && v.stats.location && v.stats.location.lat;
+      var lon = v.stats && v.stats.location && v.stats.location.lon;
+      var speed = (v.stats && v.stats.speed) || 0;
+      var fuel = v.stats && v.stats.fuelLevel;
+      var address = (v.stats && v.stats.location && v.stats.location.address) || 'Unknown location';
+
+      var card = document.createElement('div');
+      card.className = 'vehicle-card' + (v.imei === selectedImei ? ' selected' : '');
+      card.innerHTML =
+        '<div class="vehicle-top">' +
+          '<span class="vehicle-name">' + (v.nickName || v.model || 'Vehicle') + '</span>' +
+          '<span class="vehicle-status status-' + status + '">' + statusLabel(status) + '</span>' +
+        '</div>' +
+        '<div class="vehicle-detail">' +
+          (speed > 1 ? '<b>' + Math.round(speed) + ' mph</b> &middot; ' : '') +
+          (fuel != null ? '<b>' + Math.round(fuel) + '%</b> fuel &middot; ' : '') +
+          address +
+        '</div>';
+      card.addEventListener('click', function(){
+        selectedImei = v.imei;
+        renderVehicles(vehicles);
+        if(lat && lon){ map.setView([lat, lon], 15); }
+      });
+      list.appendChild(card);
+
+      if(lat && lon){
+        var icon = L.divIcon({
+          className: '',
+          html: '<div class="veh-marker' + (status === 'idle' ? ' idle' : '') + '"></div>',
+          iconSize: [16, 16]
+        });
+        if(markers[v.imei]){
+          markers[v.imei].setLatLng([lat, lon]);
+          markers[v.imei].setIcon(icon);
+        } else {
+          markers[v.imei] = L.marker([lat, lon], { icon: icon }).addTo(map)
+            .bindPopup((v.nickName || v.model || 'Vehicle'));
+        }
+      }
+    });
+  }
+
+  function fetchVehicles(){
+    fetch('/api/vehicles')
+      .then(function(r){ return r.json(); })
+      .then(function(data){
+        if(data.error){
+          document.getElementById('vehicleList').innerHTML =
+            '<div class="empty-state">Couldn\'t load vehicles.<br><b>' + data.error + '</b><br><br>' +
+            'Check the BOUNCIE_CLIENT_ID / SECRET / AUTH_CODE environment variables on Railway.</div>';
+          return;
+        }
+        renderVehicles(data);
+      })
+      .catch(function(){
+        document.getElementById('vehicleList').innerHTML =
+          '<div class="empty-state">Couldn\'t reach the tracker service.</div>';
+      });
+  }
+
+  fetchVehicles();
+  setInterval(fetchVehicles, 15000);
+</script>
+
+</body>
+</html>
