@@ -56,7 +56,7 @@ async function getAccessToken() {
 
 async function bouncieFetch(endpoint) {
   const token = await getAccessToken();
-  const res = await fetch(`https://api.bouncie.dev${endpoint}`, {
+  const res = await fetch(`https://api.bouncie.dev/v1${endpoint}`, {
     headers: { Authorization: token },
   });
   if (!res.ok) {
