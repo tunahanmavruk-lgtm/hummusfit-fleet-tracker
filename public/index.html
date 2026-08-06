@@ -209,6 +209,20 @@
     return s === 'moving' ? 'Moving' : s === 'idle' ? 'Idle' : 'Parked';
   }
 
+  // A few vans (e.g. the 2016 Ford Transit, the 2022 RAM Promaster) never
+  // got a nickName set in Bouncie. v.model is an object ({make, name,
+  // year}), not a string — falling straight through to it, as the old
+  // code did, rendered the literal text "[object Object]" in the list.
+  // Build a real label from the model fields instead.
+  function vehicleLabel(v){
+    if(v.nickName && v.nickName.trim()) return v.nickName.trim();
+    if(v.model){
+      var parts = [v.model.year, v.model.make, v.model.name].filter(Boolean);
+      if(parts.length) return parts.join(' ');
+    }
+    return 'Vehicle';
+  }
+
   function renderVehicles(vehicles){
     var list = document.getElementById('vehicleList');
     if(!vehicles || vehicles.length === 0){
@@ -242,7 +256,7 @@
       card.className = 'vehicle-card' + (v.imei === selectedImei ? ' selected' : '');
       card.innerHTML =
         '<div class="vehicle-top">' +
-          '<span class="vehicle-name">' + (v.nickName || v.model || 'Vehicle') + '</span>' +
+          '<span class="vehicle-name">' + vehicleLabel(v) + '</span>' +
           '<span class="vehicle-status status-' + status + '">' + statusLabel(status) + '</span>' +
         '</div>' +
         '<div class="vehicle-detail">' +
@@ -268,7 +282,7 @@
           markers[v.imei].setIcon(icon);
         } else {
           markers[v.imei] = L.marker([lat, lon], { icon: icon }).addTo(map)
-            .bindPopup((v.nickName || v.model || 'Vehicle'));
+            .bindPopup(vehicleLabel(v));
         }
       }
     });
