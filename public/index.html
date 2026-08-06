@@ -182,6 +182,18 @@
   var markers = {};
   var selectedImei = null;
 
+  // Lets another app (the store-facing receiving-check page) deep-link
+  // straight to the specific van heading their way, e.g.
+  // /?van=Van%201 — matched against nickName since that's the only
+  // identifier Route Board's van assignment actually stores. Only
+  // auto-selects once, the first time vehicles load, so it doesn't fight
+  // a person who's since clicked a different vehicle in the list.
+  var requestedVan = null;
+  try {
+    requestedVan = new URLSearchParams(location.search).get('van');
+  } catch (e) { /* ancient browser — just skip deep-linking */ }
+  var autoSelectDone = false;
+
   function statusFromVehicle(v){
     // Bouncie stats: moving speed > 0 = moving, ignition on/idle, else off
     var speed = (v.stats && v.stats.speed) || 0;
@@ -202,6 +214,20 @@
       return;
     }
     list.innerHTML = '';
+
+    if(requestedVan && !autoSelectDone){
+      var match = vehicles.find(function(v){
+        return (v.nickName || '').toLowerCase() === requestedVan.toLowerCase();
+      });
+      if(match){
+        selectedImei = match.imei;
+        autoSelectDone = true;
+        var mLat = match.stats && match.stats.location && match.stats.location.lat;
+        var mLon = match.stats && match.stats.location && match.stats.location.lon;
+        if(mLat && mLon){ map.setView([mLat, mLon], 15); }
+      }
+    }
+
     vehicles.forEach(function(v){
       var status = statusFromVehicle(v);
       var lat = v.stats && v.stats.location && v.stats.location.lat;
