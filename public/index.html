@@ -183,14 +183,16 @@
   var selectedImei = null;
 
   // Lets another app (the store-facing receiving-check page) deep-link
-  // straight to the specific van heading their way, e.g.
-  // /?van=Van%201 — matched against nickName since that's the only
-  // identifier Route Board's van assignment actually stores. Only
+  // straight to the specific van heading their way, e.g. /?imei=352...
+  // Matched by IMEI, not nickName — Bouncie's nickName field is
+  // free-typed and doesn't reliably match what Route Board calls the
+  // same van (typos, missing words), so the caller resolves the exact
+  // vehicle server-side and hands us its IMEI directly. Only
   // auto-selects once, the first time vehicles load, so it doesn't fight
   // a person who's since clicked a different vehicle in the list.
-  var requestedVan = null;
+  var requestedImei = null;
   try {
-    requestedVan = new URLSearchParams(location.search).get('van');
+    requestedImei = new URLSearchParams(location.search).get('imei');
   } catch (e) { /* ancient browser — just skip deep-linking */ }
   var autoSelectDone = false;
 
@@ -215,9 +217,9 @@
     }
     list.innerHTML = '';
 
-    if(requestedVan && !autoSelectDone){
+    if(requestedImei && !autoSelectDone){
       var match = vehicles.find(function(v){
-        return (v.nickName || '').toLowerCase() === requestedVan.toLowerCase();
+        return v.imei === requestedImei;
       });
       if(match){
         selectedImei = match.imei;
