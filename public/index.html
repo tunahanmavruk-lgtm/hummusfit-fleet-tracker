@@ -9,33 +9,42 @@
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Montserrat:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <style>
+  /* Same light palette as myhummusfit.com and the Route Board dispatch
+     view — cream background, white cards, teal/orange brand accents on
+     near-black text. This used to be a dark "ticket-rail" theme like the
+     ops hub; moved to match the site look specifically, per request. */
   :root{
-    --ink:#F2EFE9;
-    --void:#0B0B0A;
-    --paper:#1B1A17;
-    --teal:#2BBFAA;
+    --bg:#F7F6F3;
+    --card:#FFFFFF;
+    --ink:#141311;
+    --dim:#7A776E;
+    --line:rgba(20,19,17,0.09);
     --orange:#E8612C;
-    --steel:#3A3A38;
-    --steel-light:#57554F;
-    --dim:#9A968C;
+    --orange-tint:#FDEBE3;
+    --teal:#1FA98F;
+    --teal-tint:#E3F5F1;
+    --shadow: 0 1px 2px rgba(20,19,17,0.04), 0 8px 24px rgba(20,19,17,0.06);
   }
   *{box-sizing:border-box; margin:0; padding:0;}
-  html,body{background:var(--void); color:var(--ink); font-family:'Montserrat',sans-serif; height:100%;}
+  html,body{background:var(--bg); color:var(--ink); font-family:'Montserrat',sans-serif; height:100%;}
   body{
-    background-image: radial-gradient(circle at 1px 1px, rgba(255,255,255,0.035) 1px, transparent 0);
-    background-size: 22px 22px;
+    background:
+      radial-gradient(circle at 8% 0%, rgba(232,97,44,0.06), transparent 40%),
+      radial-gradient(circle at 95% 10%, rgba(31,169,143,0.07), transparent 40%),
+      var(--bg);
   }
 
   header{
     padding: 28px 6vw 20px;
-    border-bottom: 1px solid var(--steel);
+    border-bottom: 2px solid var(--ink);
+    background: var(--bg);
   }
   .eyebrow{
     font-family:'JetBrains Mono', monospace;
     font-size: 11px;
     letter-spacing: 0.25em;
     text-transform: uppercase;
-    color: var(--teal);
+    color: var(--orange);
     display:flex;
     align-items:center;
     gap:10px;
@@ -55,8 +64,9 @@
     font-size: clamp(36px, 6vw, 64px);
     line-height: 0.9;
     letter-spacing: 0.01em;
+    color: var(--ink);
   }
-  h1 span{ color: var(--orange); }
+  h1 span{ color: var(--teal); }
 
   main{
     display:grid;
@@ -70,19 +80,21 @@
   .vehicle-list{
     padding: 20px;
     overflow-y:auto;
-    border-right: 1px solid var(--steel);
+    border-right: 1px solid var(--line);
+    background: var(--bg);
   }
   .vehicle-card{
-    background: var(--paper);
-    border: 1px solid var(--steel);
-    border-radius: 8px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    box-shadow: var(--shadow);
     padding: 14px 16px;
     margin-bottom: 12px;
     cursor:pointer;
     transition: border-color .15s ease, transform .15s ease;
   }
   .vehicle-card:hover{ border-color: var(--teal); transform: translateY(-1px); }
-  .vehicle-card.selected{ border-color: var(--orange); }
+  .vehicle-card.selected{ border-color: var(--orange); box-shadow: 0 0 0 1.5px var(--orange), var(--shadow); }
   .vehicle-top{
     display:flex;
     justify-content:space-between;
@@ -93,18 +105,20 @@
     font-family:'Bebas Neue', sans-serif;
     font-size: 18px;
     letter-spacing:0.02em;
+    color: var(--ink);
   }
   .vehicle-status{
     font-family:'JetBrains Mono', monospace;
     font-size: 9.5px;
+    font-weight:700;
     letter-spacing:0.08em;
     text-transform:uppercase;
-    padding: 3px 8px;
+    padding: 3px 9px;
     border-radius: 999px;
   }
-  .status-moving{ color: var(--teal); border:1px solid var(--teal); }
-  .status-idle{ color: var(--orange); border:1px solid var(--orange); }
-  .status-off{ color: var(--dim); border:1px solid var(--steel-light); }
+  .status-moving{ color: var(--teal); background: var(--teal-tint); }
+  .status-idle{ color: var(--orange); background: var(--orange-tint); }
+  .status-off{ color: var(--dim); background: var(--line); }
   .vehicle-detail{
     font-size: 12px;
     color: var(--dim);
@@ -113,7 +127,7 @@
   .vehicle-detail b{ color: var(--ink); font-weight:600; }
 
   #map{
-    background: var(--paper);
+    background: var(--card);
   }
 
   .empty-state{
@@ -129,30 +143,31 @@
   .refresh-note{
     font-family:'JetBrains Mono', monospace;
     font-size: 10px;
-    color: var(--steel-light);
+    color: var(--dim);
     padding: 10px 20px;
-    border-top: 1px solid var(--steel);
+    border-top: 1px solid var(--line);
+    background: var(--bg);
   }
 
-  /* pulsing vehicle marker */
+  /* pulsing vehicle marker — white ring so it pops off the light basemap */
   .veh-marker{
     width: 16px; height: 16px;
     border-radius: 50%;
     background: var(--teal);
-    border: 2px solid var(--void);
-    box-shadow: 0 0 0 rgba(43,191,170,0.6);
+    border: 2.5px solid #fff;
+    box-shadow: 0 1px 4px rgba(20,19,17,0.35), 0 0 0 rgba(31,169,143,0.6);
     animation: markerPulse 2s infinite;
   }
   .veh-marker.idle{ background: var(--orange); animation: markerPulseOrange 2s infinite; }
   @keyframes markerPulse{
-    0%{ box-shadow: 0 0 0 0 rgba(43,191,170,0.6); }
-    70%{ box-shadow: 0 0 0 12px rgba(43,191,170,0); }
-    100%{ box-shadow: 0 0 0 0 rgba(43,191,170,0); }
+    0%{ box-shadow: 0 1px 4px rgba(20,19,17,0.35), 0 0 0 0 rgba(31,169,143,0.6); }
+    70%{ box-shadow: 0 1px 4px rgba(20,19,17,0.35), 0 0 0 12px rgba(31,169,143,0); }
+    100%{ box-shadow: 0 1px 4px rgba(20,19,17,0.35), 0 0 0 0 rgba(31,169,143,0); }
   }
   @keyframes markerPulseOrange{
-    0%{ box-shadow: 0 0 0 0 rgba(232,97,44,0.6); }
-    70%{ box-shadow: 0 0 0 12px rgba(232,97,44,0); }
-    100%{ box-shadow: 0 0 0 0 rgba(232,97,44,0); }
+    0%{ box-shadow: 0 1px 4px rgba(20,19,17,0.35), 0 0 0 0 rgba(232,97,44,0.6); }
+    70%{ box-shadow: 0 1px 4px rgba(20,19,17,0.35), 0 0 0 12px rgba(232,97,44,0); }
+    100%{ box-shadow: 0 1px 4px rgba(20,19,17,0.35), 0 0 0 0 rgba(232,97,44,0); }
   }
 </style>
 </head>
@@ -174,7 +189,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
   var map = L.map('map', { zoomControl: true }).setView([40.83, -73.13], 10);
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
     attribution: '&copy; OpenStreetMap &copy; CARTO',
     maxZoom: 19
   }).addTo(map);

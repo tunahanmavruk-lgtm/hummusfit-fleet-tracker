@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hummus Fit — Track My Delivery</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Montserrat:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+  /* Same light palette as myhummusfit.com / Route Board — this page is
+     what a store employee actually sees, so it should look like the
+     brand, not like a dark ops-tool dashboard. */
+  :root{
+    --bg:#F7F6F3;
+    --card:#FFFFFF;
+    --ink:#141311;
+    --dim:#7A776E;
+    --line:rgba(20,19,17,0.09);
+    --orange:#E8612C;
+    --orange-tint:#FDEBE3;
+    --teal:#1FA98F;
+    --teal-tint:#E3F5F1;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{background:var(--bg); color:var(--ink); font-family:'Montserrat',sans-serif; height:100%;}
+  body{ display:flex; flex-direction:column; }
+
+  header{
+    padding: 20px 5vw 16px;
+    border-bottom: 2px solid var(--ink);
+    background: var(--bg);
+    flex-shrink:0;
+  }
+  .eyebrow{
+    font-family:'JetBrains Mono', monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--orange);
+    margin-bottom: 8px;
+  }
+  h1{
+    font-family:'Bebas Neue', sans-serif;
+    font-size: clamp(26px, 6vw, 38px);
+    line-height: 0.95;
+    color: var(--ink);
+  }
+  .van-status-row{
+    margin-top: 10px;
+    display:flex;
+    align-items:center;
+    gap: 10px;
+    flex-wrap:wrap;
+  }
+  .status-chip{
+    font-family:'JetBrains Mono', monospace;
+    font-size: 10.5px;
+    font-weight:700;
+    letter-spacing:0.06em;
+    text-transform:uppercase;
+    padding: 4px 11px;
+    border-radius: 999px;
+  }
+  .status-chip.moving{ color: var(--teal); background: var(--teal-tint); }
+  .status-chip.idle{ color: var(--orange); background: var(--orange-tint); }
+  .status-chip.off{ color: var(--dim); background: var(--line); }
+  .status-chip.delivered{ color: var(--teal); background: var(--teal-tint); }
+  .speed-note{
+    font-family:'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--dim);
+  }
+
+  #map{ flex:1; min-height: 0; background: var(--card); }
+
+  .empty-state, .error-state, .delivered-state{
+    flex:1;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    flex-direction:column;
+    gap: 10px;
+    text-align:center;
+    padding: 40px 24px;
+    color: var(--dim);
+    font-family:'JetBrains Mono', monospace;
+    font-size: 13px;
+    line-height:1.8;
+    background: var(--bg);
+  }
+  .error-state{ color: #DA4A3F; }
+  .delivered-state .big-check{ font-size: 40px; color: var(--teal); }
+  .delivered-state .headline{
+    font-family:'Bebas Neue', sans-serif;
+    font-size: 28px;
+    color: var(--ink);
+  }
+
+  .refresh-note{
+    font-family:'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--dim);
+    padding: 8px 20px;
+    border-top: 1px solid var(--line);
+    background: var(--bg);
+    flex-shrink:0;
+  }
+
+  .veh-marker{
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    background: var(--teal);
+    border: 2.5px solid #fff;
+    box-shadow: 0 1px 4px rgba(20,19,17,0.35), 0 0 0 rgba(31,169,143,0.6);
+    animation: markerPulse 2s infinite;
+  }
+  .veh-marker.idle{ background: var(--orange); animation: markerPulseOrange 2s infinite; }
+  @keyframes markerPulse{
+    0%{ box-shadow: 0 1px 4px rgba(20,19,17,0.35), 0 0 0 0 rgba(31,169,143,0.6); }
+    70%{ box-shadow: 0 1px 4px rgba(20,19,17,0.35), 0 0 0 14px rgba(31,169,143,0); }
+    100%{ box-shadow: 0 1px 4px rgba(20,19,17,0.35), 0 0 0 0 rgba(31,169,143,0); }
+  }
+  @keyframes markerPulseOrange{
+    0%{ box-shadow: 0 1px 4px rgba(20,19,17,0.35), 0 0 0 0 rgba(232,97,44,0.6); }
+    70%{ box-shadow: 0 1px 4px rgba(20,19,17,0.35), 0 0 0 14px rgba(232,97,44,0); }
+    100%{ box-shadow: 0 1px 4px rgba(20,19,17,0.35), 0 0 0 0 rgba(232,97,44,0); }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="eyebrow">Hummus Fit / Live Delivery</div>
+  <h1 id="vanName">Loading…</h1>
+  <div class="van-status-row" id="statusRow"></div>
+</header>
+
+<div id="mainArea">
+  <div class="empty-state" id="loadingState">Finding your delivery…</div>
+</div>
+<div class="refresh-note">Updates automatically — no need to refresh</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+(function(){
+  // This page is scoped on purpose — it exists so a store employee can
+  // see the ONE van heading to them, not the whole fleet. Everything
+  // here reads from /api/vehicle/:imei, a server endpoint that only ever
+  // returns that single vehicle, never the full roster. And once the
+  // stop this link belongs to is marked delivered on Route Board, this
+  // page stops showing a live position at all — a bookmarked link
+  // shouldn't keep working forever after the drop-off already happened.
+  var params = new URLSearchParams(location.search);
+  var imei = params.get('imei');
+  var stopName = params.get('stop');
+  var routeBoardUrl = params.get('routeBoardUrl');
+
+  var map = null;
+  var marker = null;
+  var vehiclePollTimer = null;
+  var deliveredCheckTimer = null;
+  var ended = false;
+
+  function showError(message){
+    document.getElementById('mainArea').innerHTML = '<div class="error-state">' + message + '</div>';
+  }
+
+  function showDelivered(){
+    if(ended) return;
+    ended = true;
+    if(vehiclePollTimer) clearInterval(vehiclePollTimer);
+    if(deliveredCheckTimer) clearInterval(deliveredCheckTimer);
+    document.getElementById('statusRow').innerHTML =
+      '<span class="status-chip delivered">Delivered</span>';
+    document.getElementById('mainArea').innerHTML =
+      '<div class="delivered-state">' +
+        '<div class="big-check">✓</div>' +
+        '<div class="headline">Delivered</div>' +
+        '<div>Tracking ends here — thanks!</div>' +
+      '</div>';
+  }
+
+  function ensureMap(){
+    if(map) return;
+    document.getElementById('mainArea').innerHTML = '<div id="map"></div>';
+    map = L.map('map', { zoomControl: true }).setView([40.83, -73.13], 11);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+      attribution: '&copy; OpenStreetMap &copy; CARTO',
+      maxZoom: 19
+    }).addTo(map);
+  }
+
+  function statusFromVehicle(v){
+    if((v.speed || 0) > 1) return 'moving';
+    if(v.isRunning) return 'idle';
+    return 'off';
+  }
+  function statusLabel(s){
+    return s === 'moving' ? 'Moving' : s === 'idle' ? 'Idle' : 'Parked';
+  }
+
+  function pollVehicle(){
+    if(ended) return;
+    fetch('/api/vehicle/' + encodeURIComponent(imei))
+      .then(function(r){ return r.json().then(function(data){ return { ok: r.ok, data: data }; }); })
+      .then(function(result){
+        if(ended) return;
+        if(!result.ok){
+          showError(result.data.error || 'Could not find that vehicle.');
+          return;
+        }
+        var v = result.data;
+        document.getElementById('vanName').textContent = v.nickName || 'Your Delivery';
+        var status = statusFromVehicle(v);
+        var speedNote = status === 'moving' ? '<span class="speed-note">' + Math.round(v.speed) + ' mph</span>' : '';
+        document.getElementById('statusRow').innerHTML =
+          '<span class="status-chip ' + status + '">' + statusLabel(status) + '</span>' + speedNote;
+
+        if(v.lat && v.lon){
+          ensureMap();
+          var icon = L.divIcon({
+            className: '',
+            html: '<div class="veh-marker' + (status === 'idle' ? ' idle' : '') + '"></div>',
+            iconSize: [18, 18]
+          });
+          if(marker){
+            marker.setLatLng([v.lat, v.lon]);
+            marker.setIcon(icon);
+          } else {
+            marker = L.marker([v.lat, v.lon], { icon: icon }).addTo(map);
+            map.setView([v.lat, v.lon], 14);
+          }
+        }
+      })
+      .catch(function(){
+        if(!ended) showError('Could not reach the tracker right now.');
+      });
+  }
+
+  function checkDelivered(){
+    if(ended || !routeBoardUrl || !stopName) return;
+    fetch(routeBoardUrl + '/api/store-eta/' + encodeURIComponent(stopName))
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(eta){
+        if(eta && eta.delivered) showDelivered();
+      })
+      .catch(function(){ /* if this check fails, keep showing live position rather than erroring out */ });
+  }
+
+  if(!imei){
+    showError('No vehicle specified for this link.');
+  } else {
+    pollVehicle();
+    checkDelivered();
+    vehiclePollTimer = setInterval(pollVehicle, 12000);
+    // Checked less often than position — this is just a stop condition,
+    // not something that needs second-by-second freshness.
+    deliveredCheckTimer = setInterval(checkDelivered, 20000);
+  }
+})();
+</script>
+
+</body>
+</html>

@@ -78,6 +78,30 @@ app.get("/api/vehicles", async (req, res) => {
   }
 });
 
+// Scoped lookup for the store-facing "track my delivery" page — returns
+// ONLY the one requested vehicle, never the rest of the fleet. This is a
+// real server-side filter, not just something the frontend hides: a
+// store employee's tracking link should never be able to see where every
+// other van in the fleet is, even by poking at the network tab.
+app.get("/api/vehicle/:imei", async (req, res) => {
+  try {
+    const vehicles = await bouncieFetch("/vehicles");
+    const v = vehicles.find((veh) => veh.imei === req.params.imei);
+    if (!v) return res.status(404).json({ error: "No vehicle with that IMEI." });
+    res.json({
+      nickName: v.nickName || null,
+      imei: v.imei,
+      speed: (v.stats && v.stats.speed) || 0,
+      isRunning: !!(v.stats && v.stats.isRunning),
+      lat: (v.stats && v.stats.location && v.stats.location.lat) || null,
+      lon: (v.stats && v.stats.location && v.stats.location.lon) || null,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get("/api/vehicles/:imei/trips", async (req, res) => {
   try {
     const trips = await bouncieFetch(`/trips?imei=${req.params.imei}&gps-format=geojson`);
