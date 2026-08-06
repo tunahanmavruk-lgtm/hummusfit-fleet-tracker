@@ -73,6 +73,12 @@
     color: var(--dim);
   }
 
+  /* #map's flex:1 only does anything if ITS parent is also a flex
+     container with room to give — #mainArea is a plain block div by
+     default, so #map was collapsing to zero height (the map never had
+     any visible area to render into, even though Leaflet initialized
+     fine and placed a marker into it). */
+  #mainArea{ flex:1; min-height:0; display:flex; flex-direction:column; }
   #map{ flex:1; min-height: 0; background: var(--card); }
 
   .empty-state, .error-state, .delivered-state{
