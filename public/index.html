@@ -95,6 +95,8 @@
   }
   .vehicle-card:hover{ border-color: var(--teal); transform: translateY(-1px); }
   .vehicle-card.selected{ border-color: var(--orange); box-shadow: 0 0 0 1.5px var(--orange), var(--shadow); }
+  .vehicle-art{height:112px;display:grid;place-items:center;margin:-5px -6px 10px;border-radius:11px;background:radial-gradient(circle at 50% 28%,#fff 0,#edf6f3 66%,#f8faf8 100%);overflow:hidden;}
+  .vehicle-art img{width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 9px 7px rgba(20,54,49,.2));}
   .vehicle-top{
     display:flex;
     justify-content:space-between;
@@ -159,6 +161,9 @@
     animation: markerPulse 2s infinite;
   }
   .veh-marker.idle{ background: var(--orange); animation: markerPulseOrange 2s infinite; }
+  .veh-photo-marker{width:74px;height:54px;display:grid;place-items:center;border-radius:15px;background:rgba(255,255,255,.94);border:2px solid #fff;box-shadow:0 6px 18px rgba(20,49,45,.28),0 0 0 2px var(--teal);transform-origin:center bottom;}
+  .veh-photo-marker.idle{box-shadow:0 6px 18px rgba(20,49,45,.28),0 0 0 2px var(--orange);}
+  .veh-photo-marker img{width:88px;height:66px;object-fit:contain;filter:drop-shadow(0 5px 4px rgba(20,49,45,.25));}
   @keyframes markerPulse{
     0%{ box-shadow: 0 1px 4px rgba(20,19,17,0.35), 0 0 0 0 rgba(31,169,143,0.6); }
     70%{ box-shadow: 0 1px 4px rgba(20,19,17,0.35), 0 0 0 12px rgba(31,169,143,0); }
@@ -238,6 +243,19 @@
     return 'Vehicle';
   }
 
+  var vehicleArtwork = {
+    '#1 mercedes blue': '/vehicles/mercedes-blue-1.png',
+    '#2 mercedes small': '/vehicles/mercedes-small-2.png'
+  };
+
+  function normalizeVehicleName(value){
+    return String(value || '').normalize('NFKC').replace(/\s+/g, ' ').trim().toLowerCase();
+  }
+
+  function vehicleArtworkFor(v){
+    return vehicleArtwork[normalizeVehicleName(vehicleLabel(v))] || null;
+  }
+
   function renderVehicles(vehicles){
     var list = document.getElementById('vehicleList');
     if(!vehicles || vehicles.length === 0){
@@ -266,10 +284,12 @@
       var speed = (v.stats && v.stats.speed) || 0;
       var fuel = v.stats && v.stats.fuelLevel;
       var address = (v.stats && v.stats.location && v.stats.location.address) || 'Unknown location';
+      var artwork = vehicleArtworkFor(v);
 
       var card = document.createElement('div');
       card.className = 'vehicle-card' + (v.imei === selectedImei ? ' selected' : '');
       card.innerHTML =
+        (artwork ? '<div class="vehicle-art"><img src="' + artwork + '" alt="' + vehicleLabel(v) + ' vehicle"></div>' : '') +
         '<div class="vehicle-top">' +
           '<span class="vehicle-name">' + vehicleLabel(v) + '</span>' +
           '<span class="vehicle-status status-' + status + '">' + statusLabel(status) + '</span>' +
@@ -287,7 +307,11 @@
       list.appendChild(card);
 
       if(lat && lon){
-        var icon = L.divIcon({
+        var icon = artwork ? L.divIcon({
+          className: '',
+          html: '<div class="veh-photo-marker' + (status === 'idle' ? ' idle' : '') + '"><img src="' + artwork + '" alt=""></div>',
+          iconSize: [74, 54], iconAnchor: [37, 48], popupAnchor: [0, -48]
+        }) : L.divIcon({
           className: '',
           html: '<div class="veh-marker' + (status === 'idle' ? ' idle' : '') + '"></div>',
           iconSize: [16, 16]
