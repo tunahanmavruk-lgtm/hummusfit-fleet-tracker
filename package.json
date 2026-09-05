@@ -10,6 +10,10 @@
     "node": ">=18"
   },
   "dependencies": {
+    "@clerk/express": "^2.1.66",
     "express": "^4.19.2"
+  },
+  "overrides": {
+    "qs": "^6.16.0"
   }
 }

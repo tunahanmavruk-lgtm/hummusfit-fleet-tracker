@@ -69,12 +69,14 @@
   h1 span{ color: var(--teal); }
 
   main{
+    position:relative;
     display:grid;
     grid-template-columns: 340px 1fr;
     height: calc(100vh - 110px);
   }
   @media (max-width: 800px){
     main{ grid-template-columns: 1fr; grid-template-rows: auto 50vh; height:auto; }
+    .trip-panel{position:fixed;max-height:62vh;bottom:12px;right:12px;width:calc(100% - 24px);}
   }
 
   .vehicle-list{
@@ -127,6 +129,11 @@
     line-height:1.6;
   }
   .vehicle-detail b{ color: var(--ink); font-weight:600; }
+  .vehicle-live-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:7px;margin-top:10px;padding-top:10px;border-top:1px solid var(--line);}
+  .vehicle-live-grid span{padding:7px 8px;border-radius:8px;background:var(--bg);color:var(--dim);font-size:9px;line-height:1.35;}
+  .vehicle-live-grid b{display:block;margin-top:2px;color:var(--ink);font-size:11px;}
+  .health-warning{color:#a33!important;background:#fff0ed!important;}
+  .trip-open{width:100%;margin-top:10px;padding:8px;border:0;border-radius:8px;background:var(--teal-tint);color:#087666;font-size:10px;font-weight:800;cursor:pointer;}
 
   #map{
     background: var(--card);
@@ -149,6 +156,20 @@
     padding: 10px 20px;
     border-top: 1px solid var(--line);
     background: var(--bg);
+  }
+  .trip-panel{position:absolute;z-index:900;right:18px;bottom:18px;width:min(410px,calc(100% - 36px));max-height:72%;overflow:auto;padding:18px;background:rgba(255,255,255,.97);border:1px solid var(--line);border-radius:16px;box-shadow:0 18px 55px rgba(20,19,17,.2);transform:translateY(calc(100% + 40px));opacity:0;pointer-events:none;transition:.2s ease;}
+  .trip-panel.open{transform:none;opacity:1;pointer-events:auto;}
+  .trip-panel-head{display:flex;align-items:start;justify-content:space-between;gap:12px;margin-bottom:12px;}
+  .trip-panel h2{font:24px 'Bebas Neue',sans-serif;letter-spacing:.02em;}
+  .trip-panel-head button{width:30px;height:30px;border:1px solid var(--line);border-radius:8px;background:#fff;cursor:pointer;}
+  .trip-subtitle{color:var(--dim);font-size:10px;line-height:1.5;}
+  .trip-list{display:grid;gap:8px;margin-top:12px;}
+  .trip-row{display:grid;grid-template-columns:1fr auto;gap:8px;padding:11px;border:1px solid var(--line);border-radius:10px;background:#fff;cursor:pointer;text-align:left;}
+  .trip-row:hover{border-color:var(--teal);}
+  .trip-row b,.trip-row small{display:block}.trip-row b{font-size:11px}.trip-row small{margin-top:4px;color:var(--dim);font-size:9px;line-height:1.45}.trip-row strong{color:var(--teal);font-size:12px;}
+  .trip-alert{color:#a33!important;}
+  @media (max-width: 800px){
+    .trip-panel{position:fixed;max-height:62vh;bottom:12px;right:12px;width:calc(100% - 24px);}
   }
 
   /* pulsing vehicle marker — white ring so it pops off the light basemap */
@@ -179,7 +200,7 @@
 <body>
 
 <header>
-  <div class="eyebrow">Hummus Fit / Buffin Bakery</div>
+  <div class="eyebrow">Manager console / Bouncie live</div>
   <h1>FLEET <span>TRACKER</span></h1>
 </header>
 
@@ -188,6 +209,17 @@
     <div class="empty-state">Loading vehicles…</div>
   </div>
   <div id="map"></div>
+  <aside class="trip-panel" id="tripPanel" aria-live="polite" aria-label="Vehicle trip history">
+    <div class="trip-panel-head">
+      <div>
+        <div class="eyebrow">Bouncie trip history</div>
+        <h2 id="tripTitle">Vehicle trips</h2>
+      </div>
+      <button type="button" id="closeTrips" aria-label="Close trip history">&#10005;</button>
+    </div>
+    <p class="trip-subtitle" id="tripSubtitle">Select a vehicle to view its latest trips and draw a route on the map.</p>
+    <div class="trip-list" id="tripList"></div>
+  </aside>
 </main>
 <div class="refresh-note" id="refreshNote">Refreshing every 15 seconds</div>
 
@@ -201,6 +233,8 @@
 
   var markers = {};
   var selectedImei = null;
+  var currentVehicles = [];
+  var tripRoute = null;
 
   // Lets another app (the store-facing receiving-check page) deep-link
   // straight to the specific van heading their way, e.g. /?imei=352...
@@ -243,6 +277,35 @@
     return 'Vehicle';
   }
 
+  function escapeHtml(value){
+    return String(value == null ? '' : value).replace(/[&<>"']/g, function(character){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[character];
+    });
+  }
+
+  function formatNumber(value, digits){
+    var number = Number(value);
+    return Number.isFinite(number) ? number.toFixed(digits == null ? 0 : digits) : '—';
+  }
+
+  function formatDate(value){
+    if(!value) return 'Unknown time';
+    var date = new Date(value);
+    return Number.isNaN(date.getTime()) ? 'Unknown time' : date.toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+  }
+
+  function relativeUpdate(value){
+    if(!value) return {label:'Unknown', stale:true};
+    var elapsed = Date.now() - new Date(value).getTime();
+    if(!Number.isFinite(elapsed)) return {label:'Unknown', stale:true};
+    var minutes = Math.max(0, Math.round(elapsed / 60000));
+    if(minutes < 2) return {label:'Just now', stale:false};
+    if(minutes < 60) return {label:minutes + ' min ago', stale:minutes > 30};
+    var hours = Math.round(minutes / 60);
+    if(hours < 48) return {label:hours + ' hr ago', stale:true};
+    return {label:Math.round(hours / 24) + ' days ago', stale:true};
+  }
+
   var vehicleArtwork = {
     '#1 mercedes blue': '/vehicles/mercedes-blue-1.png',
     '#2 mercedes small': '/vehicles/mercedes-small-2.png',
@@ -261,6 +324,7 @@
   }
 
   function renderVehicles(vehicles){
+    currentVehicles = vehicles || [];
     var list = document.getElementById('vehicleList');
     if(!vehicles || vehicles.length === 0){
       list.innerHTML = '<div class="empty-state">No vehicles returned yet.<br>Check that devices are authorized in your Bouncie developer account.</div>';
@@ -289,24 +353,45 @@
       var fuel = v.stats && v.stats.fuelLevel;
       var address = (v.stats && v.stats.location && v.stats.location.address) || 'Unknown location';
       var artwork = vehicleArtworkFor(v);
+      var odometer = v.stats && v.stats.odometer;
+      var battery = v.stats && v.stats.battery;
+      var mil = v.stats && v.stats.mil;
+      var update = relativeUpdate(v.stats && v.stats.lastUpdated);
+      var batteryLabel = battery && battery.status ? battery.status : 'No alert';
+      var engineLabel = mil && mil.milOn ? 'Check engine' : 'No alert';
+      var safeName = escapeHtml(vehicleLabel(v));
 
       var card = document.createElement('div');
       card.className = 'vehicle-card' + (v.imei === selectedImei ? ' selected' : '');
       card.innerHTML =
-        (artwork ? '<div class="vehicle-art"><img src="' + artwork + '" alt="' + vehicleLabel(v) + ' vehicle"></div>' : '') +
+        (artwork ? '<div class="vehicle-art"><img src="' + artwork + '" alt="' + safeName + ' vehicle"></div>' : '') +
         '<div class="vehicle-top">' +
-          '<span class="vehicle-name">' + vehicleLabel(v) + '</span>' +
+          '<span class="vehicle-name">' + safeName + '</span>' +
           '<span class="vehicle-status status-' + status + '">' + statusLabel(status) + '</span>' +
         '</div>' +
         '<div class="vehicle-detail">' +
           (speed > 1 ? '<b>' + Math.round(speed) + ' mph</b> &middot; ' : '') +
           (fuel != null ? '<b>' + Math.round(fuel) + '%</b> fuel &middot; ' : '') +
-          address +
-        '</div>';
+          escapeHtml(address) +
+        '</div>' +
+        '<div class="vehicle-live-grid">' +
+          '<span>ODOMETER<b>' + (odometer != null ? formatNumber(odometer, 1) + ' mi' : '—') + '</b></span>' +
+          '<span class="' + (update.stale ? 'health-warning' : '') + '">LAST SIGNAL<b>' + escapeHtml(update.label) + '</b></span>' +
+          '<span class="' + (battery && battery.status && String(battery.status).toLowerCase() !== 'normal' ? 'health-warning' : '') + '">BATTERY<b>' + escapeHtml(batteryLabel) + '</b></span>' +
+          '<span class="' + (mil && mil.milOn ? 'health-warning' : '') + '">ENGINE<b>' + escapeHtml(engineLabel) + '</b></span>' +
+        '</div>' +
+        '<button type="button" class="trip-open">VIEW LAST 20 TRIPS</button>';
       card.addEventListener('click', function(){
         selectedImei = v.imei;
-        renderVehicles(vehicles);
+        renderVehicles(currentVehicles);
         if(lat && lon){ map.setView([lat, lon], 15); }
+      });
+      card.querySelector('.trip-open').addEventListener('click', function(event){
+        event.stopPropagation();
+        selectedImei = v.imei;
+        renderVehicles(currentVehicles);
+        if(lat && lon){ map.setView([lat, lon], 15); }
+        loadTrips(v);
       });
       list.appendChild(card);
 
@@ -331,9 +416,84 @@
     });
   }
 
+  function tripDuration(trip){
+    var start = new Date(trip.startTime).getTime();
+    var end = new Date(trip.endTime).getTime();
+    if(!Number.isFinite(start) || !Number.isFinite(end)) return '—';
+    var minutes = Math.max(0, Math.round((end - start) / 60000));
+    return minutes < 60 ? minutes + ' min' : Math.floor(minutes / 60) + ' hr ' + (minutes % 60) + ' min';
+  }
+
+  function drawTrip(trip){
+    var coordinates = trip.gps && trip.gps.coordinates;
+    if(!Array.isArray(coordinates) || coordinates.length < 2){
+      document.getElementById('tripSubtitle').textContent = 'A mapped GPS route is not available for this trip.';
+      return;
+    }
+    var latLngs = coordinates.map(function(point){ return [point[1], point[0]]; });
+    if(tripRoute) map.removeLayer(tripRoute);
+    tripRoute = L.polyline(latLngs, {color:'#e8612c',weight:5,opacity:.88}).addTo(map);
+    map.fitBounds(tripRoute.getBounds(), {padding:[40,40]});
+    document.getElementById('tripSubtitle').textContent = 'Selected route is highlighted in orange on the map.';
+  }
+
+  function renderTrips(trips){
+    var list = document.getElementById('tripList');
+    if(!Array.isArray(trips) || trips.length === 0){
+      list.innerHTML = '<div class="empty-state">No completed trips were returned for this vehicle.</div>';
+      return;
+    }
+    list.innerHTML = '';
+    trips.forEach(function(trip){
+      var hardEvents = Number(trip.hardBrakingCount || 0) + Number(trip.hardAccelerationCount || 0);
+      var idleMinutes = Math.round(Number(trip.totalIdleDuration || 0) / 60);
+      var row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'trip-row';
+      row.innerHTML = '<span><b>' + escapeHtml(formatDate(trip.startTime)) + '</b>' +
+        '<small>' + escapeHtml(tripDuration(trip)) + ' · Avg ' + formatNumber(trip.averageSpeed, 0) + ' mph · Max ' + formatNumber(trip.maxSpeed, 0) + ' mph<br>' +
+        idleMinutes + ' min idle · ' + formatNumber(trip.fuelConsumed, 2) + ' gal' +
+        (hardEvents ? ' · <span class="trip-alert">' + hardEvents + ' hard-driving event' + (hardEvents === 1 ? '' : 's') + '</span>' : '') + '</small></span>' +
+        '<strong>' + formatNumber(trip.distance, 1) + ' mi</strong>';
+      row.addEventListener('click', function(){ drawTrip(trip); });
+      list.appendChild(row);
+    });
+  }
+
+  function loadTrips(vehicle){
+    var panel = document.getElementById('tripPanel');
+    document.getElementById('tripTitle').textContent = vehicleLabel(vehicle);
+    document.getElementById('tripSubtitle').textContent = 'Loading the latest 20 completed trips…';
+    document.getElementById('tripList').innerHTML = '';
+    panel.classList.add('open');
+    fetch('/api/vehicles/' + encodeURIComponent(vehicle.imei) + '/trips?limit=20')
+      .then(function(response){
+        if(response.status === 401){ location.assign('/sign-in?redirect_url=/'); throw new Error('Authentication required'); }
+        return response.json();
+      })
+      .then(function(data){
+        if(data.error) throw new Error(data.error);
+        document.getElementById('tripSubtitle').textContent = 'Choose a trip to draw its recorded route on the map.';
+        renderTrips(data);
+      })
+      .catch(function(error){
+        if(error.message === 'Authentication required') return;
+        document.getElementById('tripSubtitle').textContent = 'Trip history could not be loaded.';
+        document.getElementById('tripList').innerHTML = '<div class="empty-state">' + escapeHtml(error.message) + '</div>';
+      });
+  }
+
+  document.getElementById('closeTrips').addEventListener('click', function(){
+    document.getElementById('tripPanel').classList.remove('open');
+    if(tripRoute){ map.removeLayer(tripRoute); tripRoute = null; }
+  });
+
   function fetchVehicles(){
     fetch('/api/vehicles')
-      .then(function(r){ return r.json(); })
+      .then(function(r){
+        if(r.status === 401){ location.assign('/sign-in?redirect_url=/'); throw new Error('Authentication required'); }
+        return r.json();
+      })
       .then(function(data){
         if(data.error){
           document.getElementById('vehicleList').innerHTML =
@@ -343,7 +503,8 @@
         }
         renderVehicles(data);
       })
-      .catch(function(){
+      .catch(function(error){
+        if(error.message === 'Authentication required') return;
         document.getElementById('vehicleList').innerHTML =
           '<div class="empty-state">Couldn\'t reach the tracker service.</div>';
       });
