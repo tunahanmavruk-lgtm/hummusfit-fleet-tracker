@@ -24,7 +24,10 @@ if (CLERK_PUBLISHABLE_KEY && CLERK_SECRET_KEY) {
   app.use(clerkMiddleware({
     publishableKey: CLERK_PUBLISHABLE_KEY,
     secretKey: CLERK_SECRET_KEY,
-    authorizedParties: ["https://hummusfit-fleet-tracker-production.up.railway.app"],
+    authorizedParties: [
+      "https://fleet.myhummusfit.com",
+      "https://hummusfit-fleet-tracker-production.up.railway.app",
+    ],
   }));
 }
 
