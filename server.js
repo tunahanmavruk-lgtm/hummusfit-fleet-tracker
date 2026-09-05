@@ -3,8 +3,8 @@ const path = require("path");
 const { clerkClient, clerkMiddleware, getAuth } = require("@clerk/express");
 
 const app = express();
-// Railway supplies PORT; local verification can safely choose another port.
-const PORT = Number(process.env.PORT) || 3000;
+// This service's Railway domain is explicitly routed to target port 3000.
+const PORT = 3000;
 
 // ---- Config from environment variables (set these in Railway) ----
 const CLIENT_ID = process.env.BOUNCIE_CLIENT_ID;
