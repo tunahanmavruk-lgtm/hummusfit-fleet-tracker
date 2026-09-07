@@ -153,20 +153,15 @@
 (function(){
   // This page is scoped on purpose — it exists so a store employee can
   // see the ONE van heading to them, not the whole fleet. Everything
-  // here reads from /api/vehicle/:imei, a server endpoint that only ever
-  // returns that single vehicle, never the full roster. And once the
-  // stop this link belongs to is marked delivered on Route Board, this
-  // page stops showing a live position at all — a bookmarked link
-  // shouldn't keep working forever after the drop-off already happened.
+  // here reads from a signed, single-store server endpoint that returns
+  // only the assigned vehicle. The server verifies the delivery is still
+  // active on every poll, so a bookmarked link stops working after drop-off.
   var params = new URLSearchParams(location.search);
-  var imei = params.get('imei');
-  var stopName = params.get('stop');
-  var routeBoardUrl = params.get('routeBoardUrl');
+  var access = params.get('access');
 
   var map = null;
   var marker = null;
   var vehiclePollTimer = null;
-  var deliveredCheckTimer = null;
   var ended = false;
 
   function showError(message){
@@ -177,7 +172,6 @@
     if(ended) return;
     ended = true;
     if(vehiclePollTimer) clearInterval(vehiclePollTimer);
-    if(deliveredCheckTimer) clearInterval(deliveredCheckTimer);
     document.getElementById('statusRow').innerHTML =
       '<span class="status-chip delivered">Delivered</span>';
     document.getElementById('mainArea').innerHTML =
@@ -209,11 +203,12 @@
 
   function pollVehicle(){
     if(ended) return;
-    fetch('/api/vehicle/' + encodeURIComponent(imei))
+    fetch('/api/store-vehicle?access=' + encodeURIComponent(access || ''))
       .then(function(r){ return r.json().then(function(data){ return { ok: r.ok, data: data }; }); })
       .then(function(result){
         if(ended) return;
         if(!result.ok){
+          if(result.data.error && result.data.error.indexOf('ended') !== -1){ showDelivered(); return; }
           showError(result.data.error || 'Could not find that vehicle.');
           return;
         }
@@ -245,25 +240,11 @@
       });
   }
 
-  function checkDelivered(){
-    if(ended || !routeBoardUrl || !stopName) return;
-    fetch(routeBoardUrl + '/api/store-eta/' + encodeURIComponent(stopName))
-      .then(function(r){ return r.ok ? r.json() : null; })
-      .then(function(eta){
-        if(eta && eta.delivered) showDelivered();
-      })
-      .catch(function(){ /* if this check fails, keep showing live position rather than erroring out */ });
-  }
-
-  if(!imei){
-    showError('No vehicle specified for this link.');
+  if(!access){
+    showError('This secure tracking link is missing or invalid.');
   } else {
     pollVehicle();
-    checkDelivered();
     vehiclePollTimer = setInterval(pollVehicle, 12000);
-    // Checked less often than position — this is just a stop condition,
-    // not something that needs second-by-second freshness.
-    deliveredCheckTimer = setInterval(checkDelivered, 20000);
   }
 })();
 </script>

@@ -1,5 +1,6 @@
 const express = require("express");
 const path = require("path");
+const crypto = require("crypto");
 const { clerkClient, clerkMiddleware, getAuth } = require("@clerk/express");
 
 const app = express();
@@ -13,6 +14,8 @@ const AUTH_CODE = process.env.BOUNCIE_AUTH_CODE;
 const REDIRECT_URI = process.env.BOUNCIE_REDIRECT_URI || "https://www.bouncie.dev";
 const CLERK_PUBLISHABLE_KEY = process.env.CLERK_PUBLISHABLE_KEY;
 const CLERK_SECRET_KEY = process.env.CLERK_SECRET_KEY;
+const STORE_TRACKING_SECRET = process.env.STORE_TRACKING_SECRET || "";
+const ROUTE_BOARD_URL = process.env.ROUTE_BOARD_URL || "https://hummusfit-route-board-production.up.railway.app";
 const MANAGER_EMAILS = new Set(
   (process.env.FLEET_MANAGER_EMAILS || "tony@myhummusfit.com")
     .split(",")
@@ -66,6 +69,41 @@ function requireManager(options = {}) {
       return res.status(401).send(options.html ? "Unable to verify this manager session." : { error: "Unable to verify manager session" });
     }
   };
+}
+
+function verifyStoreTrackingToken(token) {
+  if (!STORE_TRACKING_SECRET || typeof token !== "string") return null;
+  const separator = token.lastIndexOf(".");
+  if (separator < 1) return null;
+  const payloadPart = token.slice(0, separator);
+  const supplied = Buffer.from(token.slice(separator + 1), "base64url");
+  const expected = crypto.createHmac("sha256", STORE_TRACKING_SECRET).update(payloadPart).digest();
+  if (expected.length !== supplied.length || !crypto.timingSafeEqual(expected, supplied)) return null;
+  try {
+    const payload = JSON.parse(Buffer.from(payloadPart, "base64url").toString("utf8"));
+    if (payload.v !== 1 || payload.scope !== "store.vehicle.track" || !payload.store || !payload.imei) return null;
+    if (!Number.isFinite(payload.exp) || payload.exp <= Math.floor(Date.now() / 1000)) return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+async function activeStoreTracking(req, res, next) {
+  const access = String(req.query.access || "");
+  const payload = verifyStoreTrackingToken(access);
+  if (!payload) return res.status(403).json({ error: "This delivery tracking link is invalid or expired." });
+  try {
+    const etaResponse = await fetch(`${ROUTE_BOARD_URL}/api/store-eta/${encodeURIComponent(payload.store)}`);
+    const eta = etaResponse.ok ? await etaResponse.json() : null;
+    if (!eta || !eta.started || eta.delivered || eta.vanImei !== payload.imei) {
+      return res.status(410).json({ error: "This delivery has ended. Live tracking is no longer available." });
+    }
+    req.storeTracking = payload;
+    next();
+  } catch {
+    return res.status(503).json({ error: "Delivery status could not be verified." });
+  }
 }
 
 let cachedToken = null;
@@ -166,7 +204,7 @@ app.get("/api/vehicles", requireManager(), async (req, res) => {
 // real server-side filter, not just something the frontend hides: a
 // store employee's tracking link should never be able to see where every
 // other van in the fleet is, even by poking at the network tab.
-app.get("/api/vehicle/:imei", async (req, res) => {
+app.get("/api/vehicle/:imei", requireManager(), async (req, res) => {
   try {
     const vehicles = await bouncieFetch("/vehicles");
     const v = vehicles.find((veh) => veh.imei === req.params.imei);
@@ -182,6 +220,25 @@ app.get("/api/vehicle/:imei", async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/store-vehicle", activeStoreTracking, async (req, res) => {
+  try {
+    const vehicles = await bouncieFetch("/vehicles");
+    const v = vehicles.find((vehicle) => vehicle.imei === req.storeTracking.imei);
+    if (!v) return res.status(404).json({ error: "The assigned delivery vehicle is unavailable." });
+    res.set("Cache-Control", "private, no-store");
+    res.json({
+      nickName: v.nickName || "Your delivery van",
+      speed: (v.stats && v.stats.speed) || 0,
+      isRunning: !!(v.stats && v.stats.isRunning),
+      lat: (v.stats && v.stats.location && v.stats.location.lat) || null,
+      lon: (v.stats && v.stats.location && v.stats.location.lon) || null,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Live vehicle position is temporarily unavailable." });
   }
 });
 
@@ -205,6 +262,14 @@ app.get("/api/status", (req, res) => {
 
 // ---- Static frontend ----
 app.get(["/", "/index.html"], requireManager({ html: true }), (req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
+app.get("/track.html", (req, res) => {
+  if (!verifyStoreTrackingToken(String(req.query.access || ""))) {
+    return res.status(403).type("html").send("<!doctype html><meta name=viewport content='width=device-width'><title>Tracking link unavailable</title><style>body{font-family:Arial,sans-serif;background:#edf5f2;color:#173b38;display:grid;place-items:center;min-height:100vh;margin:0}.card{max-width:420px;margin:24px;padding:32px;border-radius:18px;background:white;text-align:center}p{line-height:1.6;color:#667b78}</style><main class=card><h1>Tracking link unavailable</h1><p>Please return to your store’s receiving page and use its current tracking button.</p></main>");
+  }
+  res.set("Cache-Control", "private, no-store");
+  res.set("Referrer-Policy", "no-referrer");
+  res.sendFile(path.join(__dirname, "public", "track.html"));
+});
 app.use(express.static(path.join(__dirname, "public"), { index: false }));
 
 app.listen(PORT, "0.0.0.0", () => {

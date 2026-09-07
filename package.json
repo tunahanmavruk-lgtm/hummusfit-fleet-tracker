@@ -4,7 +4,8 @@
   "description": "Live vehicle tracking for Hummus Fit / Buffin Bakery delivery fleet, powered by the Bouncie API",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --test test/*.test.js"
   },
   "engines": {
     "node": ">=18"
