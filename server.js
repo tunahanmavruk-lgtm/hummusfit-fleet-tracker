@@ -96,7 +96,7 @@ async function activeStoreTracking(req, res, next) {
   try {
     const etaResponse = await fetch(`${ROUTE_BOARD_URL}/api/store-eta/${encodeURIComponent(payload.store)}`);
     const eta = etaResponse.ok ? await etaResponse.json() : null;
-    if (!eta || !eta.started || eta.delivered || eta.vanImei !== payload.imei) {
+    if (!eta || !eta.started || !eta.trackingAvailable || eta.vanImei !== payload.imei) {
       return res.status(410).json({ error: "This delivery has ended. Live tracking is no longer available." });
     }
     req.storeTracking = payload;

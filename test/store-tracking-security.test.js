@@ -13,7 +13,7 @@ test("protects the complete fleet and scopes store tracking to a signed active d
   assert.match(server, /app\.get\("\/api\/store-vehicle", activeStoreTracking/);
   assert.match(server, /scope !== "store\.vehicle\.track"/);
   assert.match(server, /eta\.vanImei !== payload\.imei/);
-  assert.match(server, /eta\.delivered/);
+  assert.match(server, /eta\.trackingAvailable/);
   assert.match(server, /Cache-Control", "private, no-store/);
 });
 
