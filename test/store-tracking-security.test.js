@@ -28,5 +28,7 @@ test("store tracking page no longer accepts raw vehicle or route identifiers", (
 
 test("authorizes both Hummus Fit owner identities by default", () => {
   const server = read("server.js");
-  assert.match(server, /tony@myhummusfit\.com,hummusfit@gmail\.com/);
+  assert.match(server, /SUPER_ADMIN_EMAIL = "tony@myhummusfit\.com"/);
+  assert.match(server, /\[SUPER_ADMIN_EMAIL, \.\.\.\(process\.env\.FLEET_MANAGER_EMAILS/);
+  assert.match(server, /hummusfit@gmail\.com/);
 });

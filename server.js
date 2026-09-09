@@ -16,9 +16,9 @@ const CLERK_PUBLISHABLE_KEY = process.env.CLERK_PUBLISHABLE_KEY;
 const CLERK_SECRET_KEY = process.env.CLERK_SECRET_KEY;
 const STORE_TRACKING_SECRET = process.env.STORE_TRACKING_SECRET || "";
 const ROUTE_BOARD_URL = process.env.ROUTE_BOARD_URL || "https://hummusfit-route-board-production.up.railway.app";
+const SUPER_ADMIN_EMAIL = "tony@myhummusfit.com";
 const MANAGER_EMAILS = new Set(
-  (process.env.FLEET_MANAGER_EMAILS || "tony@myhummusfit.com,hummusfit@gmail.com")
-    .split(",")
+  [SUPER_ADMIN_EMAIL, ...(process.env.FLEET_MANAGER_EMAILS || "hummusfit@gmail.com").split(",")]
     .map((email) => email.trim().toLowerCase())
     .filter(Boolean)
 );
