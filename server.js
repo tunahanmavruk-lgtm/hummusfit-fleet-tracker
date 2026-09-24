@@ -15,6 +15,7 @@ const REDIRECT_URI = process.env.BOUNCIE_REDIRECT_URI || "https://www.bouncie.de
 const CLERK_PUBLISHABLE_KEY = process.env.CLERK_PUBLISHABLE_KEY;
 const CLERK_SECRET_KEY = process.env.CLERK_SECRET_KEY;
 const STORE_TRACKING_SECRET = process.env.STORE_TRACKING_SECRET || "";
+const FLEET_SERVICE_SECRET = process.env.FLEET_SERVICE_SECRET || "";
 const ROUTE_BOARD_URL = process.env.ROUTE_BOARD_URL || "https://hummusfit-route-board-production.up.railway.app";
 const SUPER_ADMIN_EMAIL = "tony@myhummusfit.com";
 const MANAGER_EMAILS = new Set(
@@ -71,7 +72,25 @@ function requireManager(options = {}) {
   };
 }
 
-function verifyStoreTrackingToken(token) {
+function serviceRequestAuthorized(req) {
+  if (!FLEET_SERVICE_SECRET) return false;
+  const authorization = String(req.get("authorization") || "");
+  const supplied = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
+  if (!supplied) return false;
+  const expectedBuffer = Buffer.from(FLEET_SERVICE_SECRET, "utf8");
+  const suppliedBuffer = Buffer.from(supplied, "utf8");
+  return expectedBuffer.length === suppliedBuffer.length && crypto.timingSafeEqual(expectedBuffer, suppliedBuffer);
+}
+
+function requireManagerOrService(req, res, next) {
+  if (serviceRequestAuthorized(req)) {
+    req.fleetServiceRequest = true;
+    return next();
+  }
+  return requireManager()(req, res, next);
+}
+
+function verifyTrackingToken(token) {
   if (!STORE_TRACKING_SECRET || typeof token !== "string") return null;
   const separator = token.lastIndexOf(".");
   if (separator < 1) return null;
@@ -81,7 +100,9 @@ function verifyStoreTrackingToken(token) {
   if (expected.length !== supplied.length || !crypto.timingSafeEqual(expected, supplied)) return null;
   try {
     const payload = JSON.parse(Buffer.from(payloadPart, "base64url").toString("utf8"));
-    if (payload.v !== 1 || payload.scope !== "store.vehicle.track" || !payload.store || !payload.imei) return null;
+    const isStoreToken = payload.scope === "store.vehicle.track" && payload.store;
+    const isRouteToken = payload.scope === "route.vehicle.track" && payload.routeId;
+    if (payload.v !== 1 || (!isStoreToken && !isRouteToken) || !payload.imei) return null;
     if (!Number.isFinite(payload.exp) || payload.exp <= Math.floor(Date.now() / 1000)) return null;
     return payload;
   } catch {
@@ -89,17 +110,25 @@ function verifyStoreTrackingToken(token) {
   }
 }
 
-async function activeStoreTracking(req, res, next) {
+async function activeScopedTracking(req, res, next) {
   const access = String(req.query.access || "");
-  const payload = verifyStoreTrackingToken(access);
+  const payload = verifyTrackingToken(access);
   if (!payload) return res.status(403).json({ error: "This delivery tracking link is invalid or expired." });
   try {
-    const etaResponse = await fetch(`${ROUTE_BOARD_URL}/api/store-eta/${encodeURIComponent(payload.store)}`);
-    const eta = etaResponse.ok ? await etaResponse.json() : null;
-    if (!eta || !eta.started || !eta.trackingAvailable || eta.vanImei !== payload.imei) {
-      return res.status(410).json({ error: "This delivery has ended. Live tracking is no longer available." });
+    if (payload.scope === "store.vehicle.track") {
+      const etaResponse = await fetch(`${ROUTE_BOARD_URL}/api/store-eta/${encodeURIComponent(payload.store)}`);
+      const eta = etaResponse.ok ? await etaResponse.json() : null;
+      if (!eta || !eta.started || !eta.trackingAvailable || eta.vanImei !== payload.imei) {
+        return res.status(410).json({ error: "This delivery has ended. Live tracking is no longer available." });
+      }
+    } else {
+      const routeResponse = await fetch(`${ROUTE_BOARD_URL}/api/route-vehicle/${encodeURIComponent(payload.routeId)}`);
+      const route = routeResponse.ok ? await routeResponse.json() : null;
+      if (!route || !route.assigned || route.vanImei !== payload.imei) {
+        return res.status(410).json({ error: "This route assignment has ended. Live tracking is no longer available." });
+      }
     }
-    req.storeTracking = payload;
+    req.vehicleTracking = payload;
     next();
   } catch {
     return res.status(503).json({ error: "Delivery status could not be verified." });
@@ -189,7 +218,7 @@ app.get("/api/session", requireManager(), (req, res) => {
   res.json({ name: req.managerIdentity.name, email: req.managerIdentity.email });
 });
 
-app.get("/api/vehicles", requireManager(), async (req, res) => {
+app.get("/api/vehicles", requireManagerOrService, async (req, res) => {
   try {
     const vehicles = await bouncieFetch("/vehicles");
     res.json(vehicles);
@@ -223,10 +252,10 @@ app.get("/api/vehicle/:imei", requireManager(), async (req, res) => {
   }
 });
 
-app.get("/api/store-vehicle", activeStoreTracking, async (req, res) => {
+app.get("/api/store-vehicle", activeScopedTracking, async (req, res) => {
   try {
     const vehicles = await bouncieFetch("/vehicles");
-    const v = vehicles.find((vehicle) => vehicle.imei === req.storeTracking.imei);
+    const v = vehicles.find((vehicle) => vehicle.imei === req.vehicleTracking.imei);
     if (!v) return res.status(404).json({ error: "The assigned delivery vehicle is unavailable." });
     res.set("Cache-Control", "private, no-store");
     res.json({
@@ -242,7 +271,7 @@ app.get("/api/store-vehicle", activeStoreTracking, async (req, res) => {
   }
 });
 
-app.get("/api/vehicles/:imei/trips", requireManager(), async (req, res) => {
+app.get("/api/vehicles/:imei/trips", requireManagerOrService, async (req, res) => {
   try {
     const trips = await bouncieFetch(`/trips?imei=${req.params.imei}&gps-format=geojson`);
     const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 20));
@@ -263,7 +292,7 @@ app.get("/api/status", (req, res) => {
 // ---- Static frontend ----
 app.get(["/", "/index.html"], requireManager({ html: true }), (req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
 app.get("/track.html", (req, res) => {
-  if (!verifyStoreTrackingToken(String(req.query.access || ""))) {
+  if (!verifyTrackingToken(String(req.query.access || ""))) {
     return res.status(403).type("html").send("<!doctype html><meta name=viewport content='width=device-width'><title>Tracking link unavailable</title><style>body{font-family:Arial,sans-serif;background:#edf5f2;color:#173b38;display:grid;place-items:center;min-height:100vh;margin:0}.card{max-width:420px;margin:24px;padding:32px;border-radius:18px;background:white;text-align:center}p{line-height:1.6;color:#667b78}</style><main class=card><h1>Tracking link unavailable</h1><p>Please return to your store’s receiving page and use its current tracking button.</p></main>");
   }
   res.set("Cache-Control", "private, no-store");

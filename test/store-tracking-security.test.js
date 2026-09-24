@@ -8,13 +8,22 @@ const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
 
 test("protects the complete fleet and scopes store tracking to a signed active delivery", () => {
   const server = read("server.js");
-  assert.match(server, /app\.get\("\/api\/vehicles", requireManager\(\)/);
+  assert.match(server, /app\.get\("\/api\/vehicles", requireManagerOrService/);
   assert.match(server, /app\.get\("\/api\/vehicle\/:imei", requireManager\(\)/);
-  assert.match(server, /app\.get\("\/api\/store-vehicle", activeStoreTracking/);
-  assert.match(server, /scope !== "store\.vehicle\.track"/);
+  assert.match(server, /app\.get\("\/api\/store-vehicle", activeScopedTracking/);
+  assert.match(server, /scope === "store\.vehicle\.track"/);
+  assert.match(server, /scope === "route\.vehicle\.track"/);
+  assert.match(server, /api\/route-vehicle/);
   assert.match(server, /eta\.vanImei !== payload\.imei/);
   assert.match(server, /eta\.trackingAvailable/);
   assert.match(server, /Cache-Control", "private, no-store/);
+});
+
+test("allows the HF Logistics server to read fleet data without exposing it publicly", () => {
+  const server = read("server.js");
+  assert.match(server, /FLEET_SERVICE_SECRET/);
+  assert.match(server, /timingSafeEqual/);
+  assert.match(server, /app\.get\("\/api\/vehicles\/:imei\/trips", requireManagerOrService/);
 });
 
 test("store tracking page no longer accepts raw vehicle or route identifiers", () => {

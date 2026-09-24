@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Hummus Fit — Track My Delivery</title>
+<title>Hummus Fit — Live Van Tracking</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Montserrat:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
@@ -138,24 +138,22 @@
 <body>
 
 <header>
-  <div class="eyebrow">Hummus Fit / Live Delivery</div>
+  <div class="eyebrow">Hummus Fit / Live Van</div>
   <h1 id="vanName">Loading…</h1>
   <div class="van-status-row" id="statusRow"></div>
 </header>
 
 <div id="mainArea">
-  <div class="empty-state" id="loadingState">Finding your delivery…</div>
+  <div class="empty-state" id="loadingState">Finding your van…</div>
 </div>
 <div class="refresh-note">Updates automatically — no need to refresh</div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 (function(){
-  // This page is scoped on purpose — it exists so a store employee can
-  // see the ONE van heading to them, not the whole fleet. Everything
-  // here reads from a signed, single-store server endpoint that returns
-  // only the assigned vehicle. The server verifies the delivery is still
-  // active on every poll, so a bookmarked link stops working after drop-off.
+  // This page is scoped on purpose: each signed link can see only its
+  // assigned van, never the full fleet. The server verifies the store
+  // delivery or driver route assignment on every poll.
   var params = new URLSearchParams(location.search);
   var access = params.get('access');
 
@@ -178,7 +176,7 @@
       '<div class="delivered-state">' +
         '<div class="big-check">✓</div>' +
         '<div class="headline">Delivered</div>' +
-        '<div>Tracking ends here — thanks!</div>' +
+        '<div>Live tracking has ended.</div>' +
       '</div>';
   }
 
