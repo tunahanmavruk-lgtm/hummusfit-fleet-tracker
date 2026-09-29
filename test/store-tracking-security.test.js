@@ -26,6 +26,23 @@ test("allows the HF Logistics server to read fleet data without exposing it publ
   assert.match(server, /app\.get\("\/api\/vehicles\/:imei\/trips", requireManagerOrService/);
 });
 
+test("keeps Bouncie authentication single-flight and avoids invalid in-memory refresh tokens", () => {
+  const server = read("server.js");
+  assert.match(server, /tokenRequestPromise/);
+  assert.match(server, /grant_type: "authorization_code"/);
+  assert.match(server, /getAccessToken\(true\)/);
+  assert.doesNotMatch(server, /cachedRefreshToken/);
+  assert.doesNotMatch(server, /grant_type: "refresh_token"/);
+  assert.match(server, /VEHICLES_CACHE_MS = 10_000/);
+});
+
+test("tells store customers that GPS recovery is automatic without exposing authorization details", () => {
+  const server = read("server.js");
+  assert.match(server, /Live GPS is reconnecting/);
+  assert.match(server, /retryable: true/);
+  assert.doesNotMatch(server, /res\.status\(503\)\.json\(\{ error: error\.message/);
+});
+
 test("store tracking page no longer accepts raw vehicle or route identifiers", () => {
   const html = read("public/track.html");
   assert.match(html, /params\.get\('access'\)/);

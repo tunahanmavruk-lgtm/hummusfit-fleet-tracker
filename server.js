@@ -136,12 +136,38 @@ async function activeScopedTracking(req, res, next) {
 }
 
 let cachedToken = null;
-let cachedRefreshToken = null;
 let tokenExpiresAt = 0;
+let tokenRequestPromise = null;
 
-async function getAccessToken() {
+async function requestAccessToken() {
+  const res = await fetch("https://auth.bouncie.com/oauth/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      client_id: CLIENT_ID,
+      client_secret: CLIENT_SECRET,
+      grant_type: "authorization_code",
+      code: AUTH_CODE,
+      redirect_uri: REDIRECT_URI,
+    }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Bouncie token request failed (${res.status}): ${text}`);
+  }
+
+  const data = await res.json();
+  if (!data.access_token) throw new Error("Bouncie token response did not include an access token");
+  cachedToken = data.access_token;
+  const expiresInSeconds = data.expires_in || 3300;
+  tokenExpiresAt = Date.now() + expiresInSeconds * 1000;
+  return cachedToken;
+}
+
+async function getAccessToken(forceRefresh = false) {
   const now = Date.now();
-  if (cachedToken && now < tokenExpiresAt - 30_000) {
+  if (!forceRefresh && cachedToken && now < tokenExpiresAt - 30_000) {
     return cachedToken;
   }
 
@@ -151,49 +177,47 @@ async function getAccessToken() {
     );
   }
 
-  const body = JSON.stringify(cachedRefreshToken ? {
-    client_id: CLIENT_ID,
-    client_secret: CLIENT_SECRET,
-    grant_type: "refresh_token",
-    refresh_token: cachedRefreshToken,
-  } : {
-    client_id: CLIENT_ID,
-    client_secret: CLIENT_SECRET,
-    grant_type: "authorization_code",
-    code: AUTH_CODE,
-    redirect_uri: REDIRECT_URI,
-  });
-
-  const res = await fetch("https://auth.bouncie.com/oauth/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: body,
-  });
-
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Bouncie token request failed (${res.status}): ${text}`);
+  if (forceRefresh) {
+    cachedToken = null;
+    tokenExpiresAt = 0;
   }
-
-  const data = await res.json();
-  cachedToken = data.access_token;
-  cachedRefreshToken = data.refresh_token || cachedRefreshToken;
-  // Bouncie tokens are typically short-lived; default to 55 min if not specified
-  const expiresInSeconds = data.expires_in || 3300;
-  tokenExpiresAt = now + expiresInSeconds * 1000;
-  return cachedToken;
+  // Bouncie rotates refresh tokens. Keeping one only in process memory lets
+  // concurrent callers or another service invalidate it and strands every
+  // customer map until a redeploy. Bouncie's authorization code remains valid
+  // until the account issues a replacement, so use that stable grant and make
+  // token creation single-flight.
+  if (!tokenRequestPromise) {
+    tokenRequestPromise = requestAccessToken().finally(() => {
+      tokenRequestPromise = null;
+    });
+  }
+  return tokenRequestPromise;
 }
 
-async function bouncieFetch(endpoint) {
+async function bouncieFetch(endpoint, canRetry = true) {
   const token = await getAccessToken();
   const res = await fetch(`https://api.bouncie.dev/v1${endpoint}`, {
     headers: { Authorization: token },
   });
+  if (canRetry && (res.status === 401 || res.status === 403)) {
+    await getAccessToken(true);
+    return bouncieFetch(endpoint, false);
+  }
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`Bouncie API error (${res.status}): ${text}`);
   }
   return res.json();
+}
+
+let vehiclesCache = { fetchedAt: 0, vehicles: [] };
+const VEHICLES_CACHE_MS = 10_000;
+
+async function getVehicles() {
+  if (Date.now() - vehiclesCache.fetchedAt < VEHICLES_CACHE_MS) return vehiclesCache.vehicles;
+  const vehicles = await bouncieFetch("/vehicles");
+  vehiclesCache = { fetchedAt: Date.now(), vehicles };
+  return vehicles;
 }
 
 // ---- API routes consumed by the frontend ----
@@ -220,7 +244,7 @@ app.get("/api/session", requireManager(), (req, res) => {
 
 app.get("/api/vehicles", requireManagerOrService, async (req, res) => {
   try {
-    const vehicles = await bouncieFetch("/vehicles");
+    const vehicles = await getVehicles();
     res.json(vehicles);
   } catch (err) {
     console.error(err);
@@ -235,7 +259,7 @@ app.get("/api/vehicles", requireManagerOrService, async (req, res) => {
 // other van in the fleet is, even by poking at the network tab.
 app.get("/api/vehicle/:imei", requireManager(), async (req, res) => {
   try {
-    const vehicles = await bouncieFetch("/vehicles");
+    const vehicles = await getVehicles();
     const v = vehicles.find((veh) => veh.imei === req.params.imei);
     if (!v) return res.status(404).json({ error: "No vehicle with that IMEI." });
     res.json({
@@ -254,7 +278,7 @@ app.get("/api/vehicle/:imei", requireManager(), async (req, res) => {
 
 app.get("/api/store-vehicle", activeScopedTracking, async (req, res) => {
   try {
-    const vehicles = await bouncieFetch("/vehicles");
+    const vehicles = await getVehicles();
     const v = vehicles.find((vehicle) => vehicle.imei === req.vehicleTracking.imei);
     if (!v) return res.status(404).json({ error: "The assigned delivery vehicle is unavailable." });
     res.set("Cache-Control", "private, no-store");
@@ -267,7 +291,10 @@ app.get("/api/store-vehicle", activeScopedTracking, async (req, res) => {
     });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ error: "Live vehicle position is temporarily unavailable." });
+    res.status(503).json({
+      error: "Live GPS is reconnecting. Your ETA remains available and this map will retry automatically.",
+      retryable: true,
+    });
   }
 });
 
